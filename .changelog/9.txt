@@ -1,3 +1,3 @@
 ```release-note:improvement
-connect-inject: support mapping scheduled Kubernetes node labels into Consul service metadata with the `app.telnyx.com/expose-node-label-to-consul-meta` annotation.
+connect-inject: support `$NODE_LABEL:<label>` interpolation in `consul.hashicorp.com/service-meta-*` annotations.
 ```

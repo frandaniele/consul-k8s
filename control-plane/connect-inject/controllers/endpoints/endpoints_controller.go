@@ -41,6 +41,7 @@ const (
 	metaKeySyntheticNode       = "synthetic-node"
 	metaKeyConsulWANFederation = "consul-wan-federation"
 	tokenMetaPodNameKey        = "pod"
+	nodeLabelMetaValuePrefix   = "$NODE_LABEL:"
 
 	// Gateway types for registration.
 	meshGateway        = "mesh-gateway"
@@ -470,16 +471,24 @@ func (r *Controller) createServiceRegistrations(pod corev1.Pod, podIP string, se
 		metaKeySyntheticNode:     "true",
 	}
 	for k, v := range pod.Annotations {
-		if strings.HasPrefix(k, constants.AnnotationMeta) && strings.TrimPrefix(k, constants.AnnotationMeta) != "" {
-			if v == "$POD_NAME" {
-				meta[strings.TrimPrefix(k, constants.AnnotationMeta)] = pod.Name
-			} else {
-				meta[strings.TrimPrefix(k, constants.AnnotationMeta)] = v
-			}
+		if !strings.HasPrefix(k, constants.AnnotationMeta) {
+			continue
 		}
-	}
-	for k, v := range nodeLabelServiceMeta(pod.Annotations[constants.AnnotationExposeNodeLabelToConsulMeta], node.Labels) {
-		meta[k] = v
+		metaKey := strings.TrimPrefix(k, constants.AnnotationMeta)
+		if metaKey == "" {
+			continue
+		}
+		switch {
+		case v == "$POD_NAME":
+			meta[metaKey] = pod.Name
+		case strings.HasPrefix(v, nodeLabelMetaValuePrefix):
+			nodeLabel := strings.TrimSpace(strings.TrimPrefix(v, nodeLabelMetaValuePrefix))
+			if value, ok := node.Labels[nodeLabel]; nodeLabel != "" && ok {
+				meta[metaKey] = value
+			}
+		default:
+			meta[metaKey] = v
+		}
 	}
 	tags := consulTags(pod)
 
@@ -1640,25 +1649,6 @@ func consulTags(pod corev1.Pod) []string {
 	}
 
 	return interpolatedTags
-}
-
-// nodeLabelServiceMeta resolves an opt-in list of node label to Consul service
-// metadata mappings. Malformed mappings and labels absent from the scheduled
-// node are ignored so metadata enrichment cannot block service registration.
-func nodeLabelServiceMeta(annotation string, nodeLabels map[string]string) map[string]string {
-	meta := make(map[string]string)
-	for _, mapping := range strings.Split(annotation, ",") {
-		nodeLabel, metaKey, ok := strings.Cut(mapping, ":")
-		nodeLabel = strings.TrimSpace(nodeLabel)
-		metaKey = strings.TrimSpace(metaKey)
-		if !ok || nodeLabel == "" || metaKey == "" {
-			continue
-		}
-		if value, ok := nodeLabels[nodeLabel]; ok {
-			meta[metaKey] = value
-		}
-	}
-	return meta
 }
 
 func getMultiPortIdx(pod corev1.Pod, serviceEndpoints corev1.Endpoints) int {

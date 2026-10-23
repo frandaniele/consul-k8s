@@ -17,32 +17,6 @@ import (
 	"github.com/hashicorp/consul-k8s/control-plane/connect-inject/constants"
 )
 
-func TestNodeLabelServiceMeta(t *testing.T) {
-	t.Parallel()
-
-	nodeLabels := map[string]string{
-		"rack":                        "rack-1",
-		"topology.kubernetes.io/zone": "us-east-1a",
-		"empty":                       "",
-	}
-
-	require.Equal(t, map[string]string{
-		"rack":  "rack-1",
-		"zone":  "us-east-1a",
-		"empty": "",
-	}, nodeLabelServiceMeta(
-		" rack : rack , topology.kubernetes.io/zone:zone, empty:empty, missing:ignored, invalid, :empty-label, empty: ",
-		nodeLabels,
-	))
-}
-
-func TestNodeLabelServiceMetaEmpty(t *testing.T) {
-	t.Parallel()
-
-	require.Empty(t, nodeLabelServiceMeta("", map[string]string{"rack": "rack-1"}))
-	require.Empty(t, nodeLabelServiceMeta("rack:rack", nil))
-}
-
 func TestCreateServiceRegistrationsNodeLabelMetadataMultiport(t *testing.T) {
 	t.Parallel()
 
@@ -60,7 +34,9 @@ func TestCreateServiceRegistrationsNodeLabelMetadataMultiport(t *testing.T) {
 	pod := *createServicePod("pod1", "1.2.3.4", true, true)
 	pod.Annotations[constants.AnnotationPort] = "60606,9314"
 	pod.Annotations[constants.AnnotationService] = "udpprober-server,udpprober-server-metrics"
-	pod.Annotations[constants.AnnotationExposeNodeLabelToConsulMeta] = "rack:rack"
+	pod.Annotations[constants.AnnotationMeta+"rack"] = "$NODE_LABEL:rack"
+	pod.Annotations[constants.AnnotationMeta+"missing"] = "$NODE_LABEL:missing"
+	pod.Annotations[constants.AnnotationMeta+"malformed"] = "$NODE_LABEL:"
 
 	for _, serviceName := range []string{"udpprober-server", "udpprober-server-metrics"} {
 		endpoint := corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "default"}}
@@ -68,5 +44,7 @@ func TestCreateServiceRegistrationsNodeLabelMetadataMultiport(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "rack-1", service.Service.Meta["rack"])
 		require.Equal(t, "rack-1", proxy.Service.Meta["rack"])
+		require.NotContains(t, service.Service.Meta, "missing")
+		require.NotContains(t, service.Service.Meta, "malformed")
 	}
 }
