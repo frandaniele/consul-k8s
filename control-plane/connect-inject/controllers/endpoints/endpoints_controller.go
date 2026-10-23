@@ -478,6 +478,9 @@ func (r *Controller) createServiceRegistrations(pod corev1.Pod, podIP string, se
 			}
 		}
 	}
+	for k, v := range nodeLabelServiceMeta(pod.Annotations[constants.AnnotationExposeNodeLabelToConsulMeta], node.Labels) {
+		meta[k] = v
+	}
 	tags := consulTags(pod)
 
 	consulNS := r.consulNamespace(pod.Namespace)
@@ -1637,6 +1640,25 @@ func consulTags(pod corev1.Pod) []string {
 	}
 
 	return interpolatedTags
+}
+
+// nodeLabelServiceMeta resolves an opt-in list of node label to Consul service
+// metadata mappings. Malformed mappings and labels absent from the scheduled
+// node are ignored so metadata enrichment cannot block service registration.
+func nodeLabelServiceMeta(annotation string, nodeLabels map[string]string) map[string]string {
+	meta := make(map[string]string)
+	for _, mapping := range strings.Split(annotation, ",") {
+		nodeLabel, metaKey, ok := strings.Cut(mapping, ":")
+		nodeLabel = strings.TrimSpace(nodeLabel)
+		metaKey = strings.TrimSpace(metaKey)
+		if !ok || nodeLabel == "" || metaKey == "" {
+			continue
+		}
+		if value, ok := nodeLabels[nodeLabel]; ok {
+			meta[metaKey] = value
+		}
+	}
+	return meta
 }
 
 func getMultiPortIdx(pod corev1.Pod, serviceEndpoints corev1.Endpoints) int {
